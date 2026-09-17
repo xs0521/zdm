@@ -62,18 +62,18 @@ public class ZdmCrawler {
         if (zdms.size() < minPushSize)
             return;
 
-        WeComNotifier weComNotifier = new WeComNotifier(System.getenv("QW_WEBHOOK_KEY"));
+        List<Zdm> articles = new ArrayList<>(zdms);
+        //企业微信汇总本次全部优惠,仅在超过接口大小上限时拆分。
+        boolean pushToWeCom = new WeComNotifier(System.getenv("QW_WEBHOOK_KEY")).send(articles);
 
-        //部分推送方式存在内容长度限制, 这里加了单次推送的条数限制, 超出则分批推送
-        Lists.partition(new ArrayList<>(zdms), 100).forEach(part -> {
+        //邮箱和WxPusher保留每100条分批推送。
+        Lists.partition(articles, 100).forEach(part -> {
             //生成推送消息的正文内容(html格式)
             String text = Utils.buildMessage(part);
             //通过邮箱推送
             boolean pushToEmail = pushToEmail(text, emailHost, emailPort, emailAccount, emailPassword);
             //通过WxPusher推送
             boolean pushToWx = pushToWx(text, spt);
-            //通过企业微信群机器人推送
-            boolean pushToWeCom = weComNotifier.send(part);
             if (!pushToEmail && !pushToWx && !pushToWeCom)
                 throw new RuntimeException("未匹配到推送方式,请检查配置");
 

@@ -47,10 +47,9 @@ public class WeComNotifier {
         if (articles.isEmpty())
             return false;
 
-        //每张表格图最多8个商品,随后发送商品名与完整URL的文字消息。
+        //先尝试生成完整表格图,仅在超过接口大小上限时拆分。
         try (TableImageRenderer ignored = renderer) {
-            for (List<Zdm> part : Lists.partition(articles, 8))
-                sendImageAndLinks(part);
+            sendImageAndLinks(articles);
         }
         return true;
     }
@@ -70,7 +69,7 @@ public class WeComNotifier {
 
     private void sendMessage(JSONObject body) {
         try {
-            //同一个发送器跨商品批次复用,避免100条分批边界绕过限速。
+            //图片和文字消息、连续调用均遵循同一发送间隔。
             if (sent)
                 TimeUnit.NANOSECONDS.sleep(Math.max(0, SEND_INTERVAL_NANOS - (System.nanoTime() - lastSentAt)));
             HttpRequest request = HttpRequest.newBuilder(webhookUri)

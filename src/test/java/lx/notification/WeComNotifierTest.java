@@ -76,13 +76,19 @@ public class WeComNotifierTest {
     }
 
     @Test
-    public void sendsTableImagesWithMatchingLinksAndPacesAcrossCalls() {
+    public void sendsOneTableForAllArticlesAndPacesAcrossCalls() {
+        List<Zdm> allArticles = articles(101);
+        //缩短文字至接口上限内,验证商品数量本身不会触发拆分。
+        for (int i = 0; i < allArticles.size(); i++) {
+            allArticles.get(i).setTitle(String.valueOf(i));
+            allArticles.get(i).setUrl("https://a");
+        }
+        List<List<Zdm>> calls = List.of(allArticles, articles(1));
         WeComNotifier notifier = notifier();
-        assertTrue(notifier.send(articles(9)));
-        assertTrue(notifier.send(articles(1)));
-        assertEquals(6, requests.size());
-        assertEquals(3, rendered.size());
-        int[] sizes = {8, 1, 1};
+        for (List<Zdm> articles : calls)
+            assertTrue(notifier.send(articles));
+        assertEquals(4, requests.size());
+        assertEquals(calls, rendered);
         for (int i = 0; i < requests.size(); i++) {
             JSONObject request = requests.get(i);
             assertEquals("POST", methods.get(i));
@@ -90,14 +96,11 @@ public class WeComNotifierTest {
             assertEquals(i % 2 == 0 ? "image" : "text", request.getString("msgtype"));
             if (i % 2 == 0) {
                 assertArrayEquals(image, Base64.getDecoder().decode(request.getJSONObject("image").getString("base64")));
-                assertEquals(sizes[i / 2], rendered.get(i / 2).size());
             } else {
                 String links = request.getJSONObject("text").getString("content");
-                int start = i / 2 == 1 ? 8 : 0;
-                for (int j = 0; j < sizes[i / 2]; j++) {
-                    assertEquals("商品\"好价\"😀" + (start + j), rendered.get(i / 2).get(j).getTitle());
-                    assertTrue(links.contains((j + 1) + ". 商品\"好价\"😀" + (start + j)
-                            + "\nhttps://www.smzdm.com/p/" + (start + j) + "/\n"));
+                for (int j = 0; j < calls.get(i / 2).size(); j++) {
+                    Zdm article = calls.get(i / 2).get(j);
+                    assertTrue(links.contains((j + 1) + ". " + article.getTitle() + "\n" + article.getUrl() + "\n"));
                 }
             }
             if (i > 0)

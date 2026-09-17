@@ -27,7 +27,7 @@
 <img src="https://raw.githubusercontent.com/lx1169732264/Images/master/zdmActions.png" width = "70%" height = "70%" align=center />
 
 企业微信配置示例: 如果机器人Webhook为`https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx`,在仓库的`Settings → Secrets and variables → Actions → New repository secret`中添加名称`QW_WEBHOOK_KEY`,值填写`xxxx`。
-企业微信会先将优惠信息渲染成四列表格图片（标题、价格、赞/评、平台）,每张图最多8个商品,随后用纯文字发送“序号＋商品名＋完整URL”,不使用Markdown超链接;序号与图片对应,文字超过2048字节时按商品拆成多条消息。表格图直接上传到企业微信,不需要公网图片存储;超过2MB时自动拆成更小的商品组重新渲染。图片与链接消息均间隔至少3.1秒发送。该渠道同样遵循过滤规则和`MIN_PUSH_SIZE`阈值,本批图片和链接均发送成功后才标记为已推送。接口要求见[企业微信群机器人配置说明](https://developer.work.weixin.qq.com/document/path/91770)。
+企业微信会先将本次全部优惠渲染成一张四列表格图片（标题、价格、赞/评、平台）,不按商品数量分组,随后用纯文字发送“序号＋商品名＋完整URL”,不使用Markdown超链接。仅在超过企业微信接口上限时拆分: 图片超过2MB时按商品拆成更小的组重新渲染,文字超过2048个UTF-8字节时按完整商品条目拆成多条消息;文字序号始终与对应图片一致。表格图直接上传到企业微信,不需要公网图片存储。图片与链接消息均间隔至少3.1秒发送。该渠道同样遵循过滤规则和`MIN_PUSH_SIZE`阈值,本次所有图片和链接均发送成功后才标记为已推送。邮箱和WxPusher仍保留每100条分批推送。接口要求见[企业微信群机器人配置说明](https://developer.work.weixin.qq.com/document/path/91770)。
 
 本地使用企业微信推送需要安装Chrome及匹配的ChromeDriver,并安装中文字体（Linux推荐`fonts-noto-cjk`）;GitHub Actions会自动安装。邮箱和WxPusher仍使用HTML表格。可使用`mvn -Dwecom.render.test=true verify`额外执行真实浏览器截图测试。
 
