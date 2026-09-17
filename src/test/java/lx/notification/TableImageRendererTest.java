@@ -2,10 +2,8 @@ package lx.notification;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 import java.util.List;
 
 import javax.imageio.ImageIO;
@@ -20,26 +18,25 @@ import static org.junit.Assert.*;
 
 public class TableImageRendererTest {
     @Test
-    public void keepsFiveColumnsAndEscapesProductTextAndImageAttributes() {
+    public void keepsFourColumnsAndEscapesProductText() {
         List<Zdm> articles = articles(1);
         articles.get(0).setTitle("<script>alert('标题')</script> & 商品");
-        articles.get(0).setPicUrl("https://example.com/' onerror='alert(1)");
         String html = TableImageRenderer.html(articles);
-        assertTrue(html.contains("<th>图片</th><th>标题</th><th>价格</th><th>赞 / 评</th><th>平台</th>"));
+        assertTrue(html.contains("<th>标题</th><th>价格</th><th>赞 / 评</th><th>平台</th>"));
         assertTrue(html.contains("<span class='number'>1.</span>"));
         assertTrue(html.contains("&lt;script&gt;alert(&#39;标题&#39;)&lt;/script&gt; &amp; 商品"));
-        assertTrue(html.contains("src='https://example.com/&#39; onerror=&#39;alert(1)'"));
+        assertFalse(html.contains("<img"));
         assertFalse(html.contains("<script>"));
     }
 
     @Test
-    public void handlesMissingPicturesAndProtocolRelativeUrls() {
+    public void ignoresProductPictures() {
         List<Zdm> articles = articles(2);
+        String html = TableImageRenderer.html(articles);
         articles.get(0).setPicUrl(null);
         articles.get(1).setPicUrl("//example.com/product.png");
-        String html = TableImageRenderer.html(articles);
-        assertTrue(html.contains("暂无图片"));
-        assertTrue(html.contains("src='https://example.com/product.png'"));
+        assertEquals(html, TableImageRenderer.html(articles));
+        assertFalse(html.contains("<th>图片</th>"));
         assertTrue(html.contains("本图共 2 条优惠"));
     }
 
@@ -54,24 +51,17 @@ public class TableImageRendererTest {
         for (int i = 0; i < articles.size(); i++) {
             articles.get(i).setTitle(titles[i]);
             articles.get(i).setPrice(i % 2 == 0 ? "99元（需用券）" : "59.9元");
-            String svg = "<svg xmlns='http://www.w3.org/2000/svg' width='108' height='108'>"
-                    + "<rect width='108' height='108' rx='12' fill='#e8eff7'/>"
-                    + "<rect x='24' y='18' width='60' height='72' rx='8' fill='#7392b5'/>"
-                    + "<circle cx='54' cy='48' r='16' fill='#fff'/></svg>";
-            articles.get(i).setPicUrl("data:image/svg+xml;base64,"
-                    + Base64.getEncoder().encodeToString(svg.getBytes(StandardCharsets.UTF_8)));
         }
         try (TableImageRenderer renderer = new TableImageRenderer()) {
             byte[] png = renderer.render(articles);
             BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(png));
             assertNotNull(decoded);
             assertEquals(1080, decoded.getWidth());
-            assertTrue(decoded.getHeight() > 1000);
+            assertTrue(decoded.getHeight() < 1000);
             assertTrue(png.length <= WeComMessages.MAX_IMAGE_BYTES);
             Files.createDirectories(Path.of("target", "wecom-preview"));
             Files.write(Path.of("target", "wecom-preview", "table.png"), png);
             articles.get(7).setTitle("很长的商品标题，需要完整显示。".repeat(100));
-            articles.get(7).setPicUrl("data:image/png;base64,broken");
             BufferedImage tall = ImageIO.read(new ByteArrayInputStream(renderer.render(articles)));
             assertTrue(tall.getHeight() > 1800);
             //复用同一浏览器,检查短表格不会残留上一组的行。

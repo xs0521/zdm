@@ -31,13 +31,9 @@ class TableImageRenderer implements AutoCloseable {
         }
         String encoded = Base64.getEncoder().encodeToString(html(articles).getBytes(StandardCharsets.UTF_8));
         driver.get("data:text/html;charset=utf-8;base64," + encoded);
-        //等待商品图加载;失败或超时的图片显示占位文字,不阻止其余优惠发送。
+        //等待字体就绪后截图,保证中文文字排版稳定。
         driver.executeAsyncScript("const done = arguments[arguments.length - 1];"
-                + "Promise.all(Array.from(document.images).map(img => new Promise(resolve => {"
-                + "const finish = () => { if (!img.naturalWidth) img.replaceWith('暂无图片'); resolve(); };"
-                + "if (img.complete) finish(); else { img.onload = finish; img.onerror = finish;"
-                + "setTimeout(finish, 8000); }"
-                + "}))).then(() => document.fonts.ready).then(() => done());");
+                + "document.fonts.ready.then(() => done());");
         Rectangle rect = driver.findElement(By.tagName("main")).getRect();
         Map<String, Object> result = driver.executeCdpCommand("Page.captureScreenshot", Map.of(
                 "format", "png", "captureBeyondViewport", true,
@@ -56,26 +52,16 @@ class TableImageRenderer implements AutoCloseable {
                 + "th{background:#203c58;color:#fff;text-align:left;font-size:20px}"
                 + "th,td{padding:14px 12px;border:1px solid #dce4ed;overflow-wrap:anywhere}"
                 + "td{vertical-align:middle;line-height:1.5}tr:nth-child(even){background:#f4f7fa}"
-                + ".picture{height:108px;display:flex;align-items:center;justify-content:center;"
-                + "color:#8995a4;font-size:16px}.picture img{width:108px;height:108px;object-fit:contain}"
                 + ".title{display:flex;gap:8px}.name{min-width:0}"
                 + ".number{flex-shrink:0;font-weight:700;color:#426b94}.price{font-weight:700;color:#bb3c29}"
                 + "</style></head><body><main><h1>什么值得买 · 优惠汇总</h1>"
                 + "<p class='note'>本图共 " + articles.size() + " 条优惠 · 点击下一条消息中的对应序号查看详情</p>"
-                + "<table><colgroup><col style='width:15%'><col style='width:43%'>"
+                + "<table><colgroup><col style='width:58%'>"
                 + "<col style='width:18%'><col style='width:12%'><col style='width:12%'></colgroup>"
-                + "<thead><tr><th>图片</th><th>标题</th><th>价格</th><th>赞 / 评</th><th>平台</th></tr></thead><tbody>");
+                + "<thead><tr><th>标题</th><th>价格</th><th>赞 / 评</th><th>平台</th></tr></thead><tbody>");
         for (int i = 0; i < articles.size(); i++) {
             Zdm article = articles.get(i);
-            String picture = StringUtils.defaultString(article.getPicUrl());
-            if (picture.startsWith("//"))
-                picture = "https:" + picture;
-            html.append("<tr><td><div class='picture'>");
-            if (picture.isEmpty())
-                html.append("暂无图片");
-            else
-                html.append("<img alt='商品图片' src='").append(escape(picture)).append("'>");
-            html.append("</div></td><td><div class='title'><span class='number'>").append(i + 1)
+            html.append("<tr><td><div class='title'><span class='number'>").append(i + 1)
                     .append(".</span><span class='name'>").append(escape(article.getTitle()))
                     .append("</span></div></td><td class='price'>")
                     .append(escape(article.getPrice())).append("</td><td>")
