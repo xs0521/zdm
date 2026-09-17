@@ -10,7 +10,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -25,17 +24,19 @@ public class WeComNotifier {
     private static final long SEND_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(3100);
 
     private final URI webhookUri;
+    private final TableImageRenderer renderer;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private long lastSentAt;
     private boolean sent;
 
     public WeComNotifier(String key) {
         this(StringUtils.isBlank(key) ? null
-                : URI.create(WEBHOOK_URL + URLEncoder.encode(key.trim(), StandardCharsets.UTF_8)));
+                : URI.create(WEBHOOK_URL + URLEncoder.encode(key.trim(), StandardCharsets.UTF_8)), new TableImageRenderer());
     }
 
-    WeComNotifier(URI webhookUri) {
+    WeComNotifier(URI webhookUri, TableImageRenderer renderer) {
         this.webhookUri = webhookUri;
+        this.renderer = renderer;
     }
 
     public boolean send(List<Zdm> articles) {
@@ -46,26 +47,24 @@ public class WeComNotifier {
         if (articles.isEmpty())
             return false;
 
-        //企业微信图文消息每次最多8条,同一机器人每分钟最多20条消息。
-        for (List<Zdm> part : Lists.partition(articles, 8)) {
-            JSONObject news = new JSONObject();
-            news.put("articles", part.stream().map(WeComNotifier::toNewsArticle).collect(Collectors.toList()));
-            JSONObject body = new JSONObject();
-            body.put("msgtype", "news");
-            body.put("news", news);
-            sendMessage(body);
+        //每张表格图最多8个商品,随后单独发送相应的可点击链接。
+        try (TableImageRenderer ignored = renderer) {
+            for (List<Zdm> part : Lists.partition(articles, 8))
+                sendImageAndLinks(part);
         }
         return true;
     }
 
-    private static JSONObject toNewsArticle(Zdm article) {
-        JSONObject result = new JSONObject();
-        result.put("title", article.getPrice() + " | " + article.getTitle());
-        result.put("description", "价格: " + article.getPrice() + "\n值/评论: " + article.getVoted()
-                + "/" + article.getComments() + "\n平台: " + article.getArticleMall());
-        result.put("url", article.getUrl());
-        result.put("picurl", article.getPicUrl());
-        return result;
+    private void sendImageAndLinks(List<Zdm> articles) {
+        JSONObject links = WeComMessages.links(articles);
+        byte[] image = renderer.render(articles);
+        if (image.length > WeComMessages.MAX_IMAGE_BYTES && articles.size() > 1) {
+            for (List<Zdm> part : Lists.partition(articles, (articles.size() + 1) / 2))
+                sendImageAndLinks(part);
+            return;
+        }
+        sendMessage(WeComMessages.image(image));
+        sendMessage(links);
     }
 
     private void sendMessage(JSONObject body) {

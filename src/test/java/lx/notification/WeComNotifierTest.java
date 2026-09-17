@@ -6,6 +6,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -14,13 +15,13 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.sun.net.httpserver.HttpServer;
 
 import lx.model.Zdm;
 
 import static org.junit.Assert.*;
+import static lx.notification.WeComTestData.articles;
 
 public class WeComNotifierTest {
     private HttpServer server;
@@ -29,6 +30,11 @@ public class WeComNotifierTest {
     private final List<Long> receivedAt = new CopyOnWriteArrayList<>();
     private final List<String> methods = new CopyOnWriteArrayList<>();
     private final List<String> contentTypes = new CopyOnWriteArrayList<>();
+    private final List<List<Zdm>> rendered = new ArrayList<>();
+    private final byte[] image = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=");
+    private int closeCount;
+    private volatile int failAt = 1;
     private volatile int status = 200;
     private volatile String response = "{\"errcode\":0,\"errmsg\":\"ok\"}";
 
@@ -40,8 +46,9 @@ public class WeComNotifierTest {
             methods.add(exchange.getRequestMethod());
             contentTypes.add(exchange.getRequestHeaders().getFirst("Content-Type"));
             requests.add(JSONObject.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
-            byte[] body = response.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(status, body.length);
+            boolean failed = requests.size() >= failAt;
+            byte[] body = (failed ? response : "{\"errcode\":0}").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(failed ? status : 200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
@@ -64,42 +71,45 @@ public class WeComNotifierTest {
 
     @Test
     public void skipsEmptyArticles() {
-        assertFalse(new WeComNotifier(webhookUri).send(Collections.emptyList()));
+        assertFalse(notifier().send(Collections.emptyList()));
         assertTrue(requests.isEmpty());
     }
 
     @Test
-    public void sendsNewsInBatchesOfEightAndPacesAcrossCalls() {
-        WeComNotifier notifier = new WeComNotifier(webhookUri);
+    public void sendsTableImagesWithMatchingLinksAndPacesAcrossCalls() {
+        WeComNotifier notifier = notifier();
         assertTrue(notifier.send(articles(9)));
         assertTrue(notifier.send(articles(1)));
-        assertEquals(3, requests.size());
+        assertEquals(6, requests.size());
+        assertEquals(3, rendered.size());
         int[] sizes = {8, 1, 1};
         for (int i = 0; i < requests.size(); i++) {
             JSONObject request = requests.get(i);
             assertEquals("POST", methods.get(i));
             assertEquals("application/json; charset=UTF-8", contentTypes.get(i));
-            assertEquals("news", request.getString("msgtype"));
-            JSONArray items = request.getJSONObject("news").getJSONArray("articles");
-            assertEquals(sizes[i], items.size());
-            int start = i == 1 ? 8 : 0;
-            for (int j = 0; j < items.size(); j++) {
-                JSONObject item = items.getJSONObject(j);
-                assertEquals("99元 | 商品\"好价\"😀" + (start + j), item.getString("title"));
-                assertEquals("价格: 99元\n值/评论: 42/12\n平台: 京东", item.getString("description"));
-                assertEquals("https://www.smzdm.com/p/" + (start + j) + "/", item.getString("url"));
-                assertEquals("https://example.com/product.png", item.getString("picurl"));
+            assertEquals(i % 2 == 0 ? "image" : "markdown", request.getString("msgtype"));
+            if (i % 2 == 0) {
+                assertArrayEquals(image, Base64.getDecoder().decode(request.getJSONObject("image").getString("base64")));
+                assertEquals(sizes[i / 2], rendered.get(i / 2).size());
+            } else {
+                String links = request.getJSONObject("markdown").getString("content");
+                int start = i / 2 == 1 ? 8 : 0;
+                for (int j = 0; j < sizes[i / 2]; j++) {
+                    assertEquals("商品\"好价\"😀" + (start + j), rendered.get(i / 2).get(j).getTitle());
+                    assertTrue(links.contains("[" + (j + 1) + ". 查看商品详情](https://www.smzdm.com/p/" + (start + j) + "/)"));
+                }
             }
             if (i > 0)
                 assertTrue(receivedAt.get(i) - receivedAt.get(i - 1) >= TimeUnit.SECONDS.toNanos(3));
         }
+        assertEquals(2, closeCount);
     }
 
     @Test
     public void rejectsHttpFailure() {
         status = 500;
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> new WeComNotifier(webhookUri).send(articles(1)));
+                () -> notifier().send(articles(1)));
         assertTrue(error.getMessage().contains("500"));
     }
 
@@ -107,11 +117,12 @@ public class WeComNotifierTest {
     public void stopsAfterApiFailureWithoutLeakingKey() {
         response = "{\"errcode\":93000,\"errmsg\":\"invalid key: test-secret\"}";
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> new WeComNotifier(webhookUri).send(articles(9)));
+                () -> notifier().send(articles(9)));
         assertTrue(error.getMessage().contains("93000"));
         assertFalse(error.getMessage().contains("test-secret"));
         assertNull(error.getCause());
         assertEquals(1, requests.size());
+        assertEquals(1, closeCount);
     }
 
     @Test
@@ -119,7 +130,7 @@ public class WeComNotifierTest {
         for (String body : new String[]{"{}", "null", "not JSON test-secret", "{\"errcode\":\"test-secret\"}"}) {
             response = body;
             IllegalStateException error = assertThrows(IllegalStateException.class,
-                    () -> new WeComNotifier(webhookUri).send(articles(1)));
+                    () -> notifier().send(articles(1)));
             assertFalse(error.getMessage().contains("test-secret"));
             assertNull(error.getCause());
         }
@@ -129,38 +140,48 @@ public class WeComNotifierTest {
     public void rejectsNetworkFailureWithoutLeakingKey() {
         server.stop(0);
         IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> new WeComNotifier(webhookUri).send(articles(1)));
+                () -> notifier().send(articles(1)));
         assertFalse(error.getMessage().contains("test-secret"));
         assertNull(error.getCause());
     }
 
     @Test
     public void preservesInterruptAndStopsSending() {
-        WeComNotifier notifier = new WeComNotifier(webhookUri);
+        WeComNotifier notifier = notifier();
         assertTrue(notifier.send(articles(1)));
         Thread.currentThread().interrupt();
         try {
             assertThrows(IllegalStateException.class, () -> notifier.send(articles(1)));
             assertTrue(Thread.currentThread().isInterrupted());
-            assertEquals(1, requests.size());
+            assertEquals(2, requests.size());
         } finally {
             Thread.interrupted();
         }
     }
 
-    private List<Zdm> articles(int count) {
-        List<Zdm> articles = new ArrayList<>();
-        for (int i = 0; i < count; i++) {
-            Zdm article = new Zdm();
-            article.setTitle("商品\"好价\"😀" + i);
-            article.setPrice("99元");
-            article.setVoted("42");
-            article.setComments("12");
-            article.setArticleMall("京东");
-            article.setUrl("https://www.smzdm.com/p/" + i + "/");
-            article.setPicUrl("https://example.com/product.png");
-            articles.add(article);
-        }
-        return articles;
+    @Test
+    public void failsWhenLinkMessageIsRejectedAfterImageSuccess() {
+        failAt = 2;
+        status = 500;
+        assertThrows(IllegalStateException.class, () -> notifier().send(articles(9)));
+        assertEquals(2, requests.size());
+        assertEquals(1, rendered.size());
+        assertEquals(1, closeCount);
     }
+
+    private WeComNotifier notifier() {
+        return new WeComNotifier(webhookUri, new TableImageRenderer() {
+            @Override
+            byte[] render(List<Zdm> articles) {
+                rendered.add(new ArrayList<>(articles));
+                return image;
+            }
+
+            @Override
+            public void close() {
+                closeCount++;
+            }
+        });
+    }
+
 }
