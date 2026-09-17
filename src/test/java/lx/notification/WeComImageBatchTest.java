@@ -46,9 +46,9 @@ public class WeComImageBatchTest {
             assertEquals(4, requests.size());
             for (int i = 0; i < 2; i++) {
                 assertEquals("image", requests.get(i * 2).getString("msgtype"));
-                String links = requests.get(i * 2 + 1).getJSONObject("markdown").getString("content");
-                assertTrue(links.contains("[1. 查看商品详情](https://www.smzdm.com/p/" + i + "/)"));
-                assertFalse(links.contains("[2."));
+                String links = requests.get(i * 2 + 1).getJSONObject("text").getString("content");
+                assertTrue(links.contains("1. 商品\"好价\"😀" + i + "\nhttps://www.smzdm.com/p/" + i + "/\n"));
+                assertFalse(links.contains("\n2. "));
             }
         } finally {
             server.stop(0);

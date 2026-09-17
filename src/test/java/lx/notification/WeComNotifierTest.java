@@ -87,16 +87,17 @@ public class WeComNotifierTest {
             JSONObject request = requests.get(i);
             assertEquals("POST", methods.get(i));
             assertEquals("application/json; charset=UTF-8", contentTypes.get(i));
-            assertEquals(i % 2 == 0 ? "image" : "markdown", request.getString("msgtype"));
+            assertEquals(i % 2 == 0 ? "image" : "text", request.getString("msgtype"));
             if (i % 2 == 0) {
                 assertArrayEquals(image, Base64.getDecoder().decode(request.getJSONObject("image").getString("base64")));
                 assertEquals(sizes[i / 2], rendered.get(i / 2).size());
             } else {
-                String links = request.getJSONObject("markdown").getString("content");
+                String links = request.getJSONObject("text").getString("content");
                 int start = i / 2 == 1 ? 8 : 0;
                 for (int j = 0; j < sizes[i / 2]; j++) {
                     assertEquals("商品\"好价\"😀" + (start + j), rendered.get(i / 2).get(j).getTitle());
-                    assertTrue(links.contains("[" + (j + 1) + ". 查看商品详情](https://www.smzdm.com/p/" + (start + j) + "/)"));
+                    assertTrue(links.contains((j + 1) + ". 商品\"好价\"😀" + (start + j)
+                            + "\nhttps://www.smzdm.com/p/" + (start + j) + "/\n"));
                 }
             }
             if (i > 0)

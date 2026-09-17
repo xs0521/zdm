@@ -47,7 +47,7 @@ public class WeComNotifier {
         if (articles.isEmpty())
             return false;
 
-        //每张表格图最多8个商品,随后单独发送相应的可点击链接。
+        //每张表格图最多8个商品,随后发送商品名与完整URL的文字消息。
         try (TableImageRenderer ignored = renderer) {
             for (List<Zdm> part : Lists.partition(articles, 8))
                 sendImageAndLinks(part);
@@ -56,7 +56,7 @@ public class WeComNotifier {
     }
 
     private void sendImageAndLinks(List<Zdm> articles) {
-        JSONObject links = WeComMessages.links(articles);
+        List<JSONObject> links = WeComMessages.links(articles);
         byte[] image = renderer.render(articles);
         if (image.length > WeComMessages.MAX_IMAGE_BYTES && articles.size() > 1) {
             for (List<Zdm> part : Lists.partition(articles, (articles.size() + 1) / 2))
@@ -64,7 +64,8 @@ public class WeComNotifier {
             return;
         }
         sendMessage(WeComMessages.image(image));
-        sendMessage(links);
+        for (JSONObject text : links)
+            sendMessage(text);
     }
 
     private void sendMessage(JSONObject body) {

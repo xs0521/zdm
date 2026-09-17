@@ -55,7 +55,7 @@ class TableImageRenderer implements AutoCloseable {
                 + ".title{display:flex;gap:8px}.name{min-width:0}"
                 + ".number{flex-shrink:0;font-weight:700;color:#426b94}.price{font-weight:700;color:#bb3c29}"
                 + "</style></head><body><main><h1>什么值得买 · 优惠汇总</h1>"
-                + "<p class='note'>本图共 " + articles.size() + " 条优惠 · 点击下一条消息中的对应序号查看详情</p>"
+                + "<p class='note'>本图共 " + articles.size() + " 条优惠 · 商品详情地址见后续文字消息（按序号对应）</p>"
                 + "<table><colgroup><col style='width:58%'>"
                 + "<col style='width:18%'><col style='width:12%'><col style='width:12%'></colgroup>"
                 + "<thead><tr><th>标题</th><th>价格</th><th>赞 / 评</th><th>平台</th></tr></thead><tbody>");

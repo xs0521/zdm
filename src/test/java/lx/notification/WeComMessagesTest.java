@@ -31,20 +31,49 @@ public class WeComMessagesTest {
     }
 
     @Test
-    public void escapesLinkDelimitersWithoutLosingUrlParameters() {
+    public void sendsProductNamesAndOriginalUrlsAsPlainText() {
         List<Zdm> articles = articles(1);
         articles.get(0).setUrl("https://example.com/(优惠)?a=1&b=two words");
-        String text = WeComMessages.links(articles).getJSONObject("markdown").getString("content");
-        assertTrue(text.contains("[1. 查看商品详情](https://example.com/%28优惠%29?a=1&b=two%20words)"));
-        assertTrue(text.getBytes(StandardCharsets.UTF_8).length <= 4096);
+        JSONObject message = WeComMessages.links(articles).get(0);
+        assertEquals("text", message.getString("msgtype"));
+        String text = message.getJSONObject("text").getString("content");
+        assertTrue(text.contains("1. 商品\"好价\"😀0\nhttps://example.com/(优惠)?a=1&b=two words\n"));
+        assertFalse(text.contains("]("));
+        assertTrue(text.getBytes(StandardCharsets.UTF_8).length <= 2048);
     }
 
     @Test
     public void rejectsMissingOrOversizedLinks() {
         List<Zdm> articles = articles(1);
-        for (String url : new String[]{null, "", "javascript:alert(1)", "https://example.com/" + "a".repeat(4096)}) {
+        for (String url : new String[]{null, "", "javascript:alert(1)", "https://example.com/" + "a".repeat(2048)}) {
             articles.get(0).setUrl(url);
             assertThrows(IllegalStateException.class, () -> WeComMessages.links(articles));
         }
+    }
+
+    @Test
+    public void splitsUtf8TextWithoutBreakingProductsOrResettingNumbers() {
+        List<Zdm> articles = articles(3);
+        articles.forEach(article -> article.setTitle("商品😀".repeat(150)));
+        List<JSONObject> messages = WeComMessages.links(articles);
+        assertEquals(3, messages.size());
+        for (int i = 0; i < messages.size(); i++) {
+            String text = messages.get(i).getJSONObject("text").getString("content");
+            assertTrue(text.getBytes(StandardCharsets.UTF_8).length <= 2048);
+            assertTrue(text.contains((i + 1) + ". " + articles.get(i).getTitle() + "\n" + articles.get(i).getUrl() + "\n"));
+        }
+    }
+
+    @Test
+    public void acceptsExactByteLimitAndRejectsOneByteOver() {
+        List<Zdm> articles = articles(1);
+        articles.get(0).setTitle("");
+        String text = WeComMessages.links(articles).get(0).getJSONObject("text").getString("content");
+        int remaining = 2048 - text.getBytes(StandardCharsets.UTF_8).length;
+        articles.get(0).setTitle("a".repeat(remaining));
+        assertEquals(2048, WeComMessages.links(articles).get(0).getJSONObject("text")
+                .getString("content").getBytes(StandardCharsets.UTF_8).length);
+        articles.get(0).setTitle("a".repeat(remaining + 1));
+        assertThrows(IllegalStateException.class, () -> WeComMessages.links(articles));
     }
 }
