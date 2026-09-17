@@ -15,7 +15,6 @@ import org.apache.commons.lang3.StringUtils;
 
 import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.JSONObject;
-import com.google.common.collect.Lists;
 
 import lx.model.Zdm;
 
@@ -24,19 +23,17 @@ public class WeComNotifier {
     private static final long SEND_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(3100);
 
     private final URI webhookUri;
-    private final TableImageRenderer renderer;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private long lastSentAt;
     private boolean sent;
 
     public WeComNotifier(String key) {
         this(StringUtils.isBlank(key) ? null
-                : URI.create(WEBHOOK_URL + URLEncoder.encode(key.trim(), StandardCharsets.UTF_8)), new TableImageRenderer());
+                : URI.create(WEBHOOK_URL + URLEncoder.encode(key.trim(), StandardCharsets.UTF_8)));
     }
 
-    WeComNotifier(URI webhookUri, TableImageRenderer renderer) {
+    WeComNotifier(URI webhookUri) {
         this.webhookUri = webhookUri;
-        this.renderer = renderer;
     }
 
     public boolean send(List<Zdm> articles) {
@@ -47,29 +44,14 @@ public class WeComNotifier {
         if (articles.isEmpty())
             return false;
 
-        //先尝试生成完整表格图,仅在超过接口大小上限时拆分。
-        try (TableImageRenderer ignored = renderer) {
-            sendImageAndLinks(articles);
-        }
-        return true;
-    }
-
-    private void sendImageAndLinks(List<Zdm> articles) {
-        List<JSONObject> links = WeComMessages.links(articles);
-        byte[] image = renderer.render(articles);
-        if (image.length > WeComMessages.MAX_IMAGE_BYTES && articles.size() > 1) {
-            for (List<Zdm> part : Lists.partition(articles, (articles.size() + 1) / 2))
-                sendImageAndLinks(part);
-            return;
-        }
-        sendMessage(WeComMessages.image(image));
-        for (JSONObject text : links)
+        for (JSONObject text : WeComMessages.text(articles))
             sendMessage(text);
+        return true;
     }
 
     private void sendMessage(JSONObject body) {
         try {
-            //图片和文字消息、连续调用均遵循同一发送间隔。
+            //分段消息、连续调用均遵循同一发送间隔。
             if (sent)
                 TimeUnit.NANOSECONDS.sleep(Math.max(0, SEND_INTERVAL_NANOS - (System.nanoTime() - lastSentAt)));
             HttpRequest request = HttpRequest.newBuilder(webhookUri)
