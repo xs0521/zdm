@@ -1,6 +1,7 @@
 # 项目简介
 
-从什么值得买的好价排行榜中收集优惠信息,并推送至邮箱或微信   
+从什么值得买的好价排行榜中收集优惠信息,并推送至邮箱、微信或企业微信群
+
 推送内容包含商品图片、标题、价格、点值的数量、评论数量等信息, 点击商品标题的超链接即可跳转至什么值得买查看正文   
 项目运行过程中会在根目录下自动创建`database.db`数据库文件,数据库中会记录已推送的优惠信息,避免重复推送   
 
@@ -12,17 +13,21 @@
 # GitHub Actions运行
 
 *  fork本仓库
-*  新增Actions secrets. 选择邮箱推送需要填写`EMAILACCOUNT`和`EMAILPASSWORD`.选择微信推送需要填写`SPT`
+*  新增Actions secrets. 选择邮箱推送需要填写`EMAILACCOUNT`和`EMAILPASSWORD`.选择WxPusher微信推送需要填写`SPT`.选择企业微信群机器人推送需要填写`QW_WEBHOOK_KEY`.可同时配置多个推送渠道
 
 | secret        |   | 说明                                                                                                                                   |
 |---------------|---|--------------------------------------------------------------------------------------------------------------------------------------|
 | EMAILACCOUNT  | 选填 | 接收优惠信息的邮箱                                                                                                                            |
 | EMAILPASSWORD | 选填 | 邮箱的授权码,[参考qq邮箱的这篇文档](https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=1001256)                                          |
 | SPT           | 选填 | WxPusher极简推送使用的身份ID,[参考WxPusher文档](https://wxpusher.zjiecode.com/docs/#/?id=spt)                                                     |
+| QW_WEBHOOK_KEY | 选填 | 企业微信群机器人Webhook地址中`key=`后面的值,只填key,不填完整URL;留空则不启用企业微信推送 |
 | GIT_TOKEN     | 必填 | [参考这篇文章的1-6步骤](https://zhuanlan.zhihu.com/p/501872439),只勾选repo的权限,Expiration设置为No Expiration                                         |
 | COOKIE        | 选填 | 请求什么值得买服务器时请求头携带的cookie参数. 不填的话会用selenium模拟浏览器行为自动获取cookie(推荐), 自动的代码失效时再考虑填写固定的cookie值(请使用F12查看cookie值, 并确保不要将cookie明文泄漏出去) |
 
 <img src="https://raw.githubusercontent.com/lx1169732264/Images/master/zdmActions.png" width = "70%" height = "70%" align=center />
+
+企业微信配置示例: 如果机器人Webhook为`https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx`,在仓库的`Settings → Secrets and variables → Actions → New repository secret`中添加名称`QW_WEBHOOK_KEY`,值填写`xxxx`。
+企业微信通过图文消息发送商品图片、标题、价格和详情链接,每条消息最多包含8个商品,多条消息自动间隔发送。该渠道同样遵循过滤规则和`MIN_PUSH_SIZE`阈值,配置的渠道均发送成功后才将本批商品标记为已推送。接口要求见[企业微信群机器人配置说明](https://developer.work.weixin.qq.com/document/path/91770)。
 
 
 * 打开fork项目的workFlow开关
